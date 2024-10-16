@@ -7,6 +7,12 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment in which the test should be executed
+        default: 'local'
+        required: false
+        type: string
 
 jobs:
   test:
@@ -16,10 +22,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: "Install Rust toolchain"
+      - name: Install Rust toolchain
         uses: Cardinal-Cryptography/github-actions/install-rust-toolchain@v6
 
-      - name: Run tests
+      - name: Run tests on local env
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.environment != 'testnet-most0') }}
         timeout-minutes: 30
         shell: bash
         run: |
@@ -27,6 +34,64 @@ jobs:
           sleep 60 # wait 1 minute for everything to be running
           make deploy-docker
           DOCKER_RELAYER_COMPILE_CONTRACTS=no-compile make run-relayers
+          make e2e-tests
+
+      - name: Download addresses for 'testnet-most0' env
+        id: addresses
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet-most0' }}
+        shell: bash
+        run: |
+          wget https://public-chain-contracts.s3.eu-central-1.amazonaws.com/most/addresses/testnet/most0.json
+
+          # Unfortunately, contract spec JSON must be split into two separate addresses.json files
+          commit_hash=$(cat most0.json | jq -r '.contract_version')
+          for net in eth azero; do
+            mkdir -p "$net"
+            sudo cat "most0.json" | \
+              sudo jq --arg NET "$net" '.addresses | to_entries | map(select(.key | contains($NET + "_"))) | map({(.key | sub($NET + "_";"")): .value.address}) | add' \
+              | sudo tee "$net"/addresses.json
+          done
+          echo "commit-sha=$commit_hash" > $GITHUB_OUTPUT
+
+      - name: Download contract artifacts from AWS S3 bucket
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet-most0' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CONTRACTS_MOST_ARTIFACTS_RW_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CONTRACTS_MOST_ARTIFACTS_RW_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.CONTRACTS_S3BUCKET_REGION }}
+        shell: bash
+        run: |
+          mkdir -p azero/artifacts
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/azero_most/most.json azero/artifacts/most.json
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/azero_token/token.json azero/artifacts/token.json
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/azero_wrapped_azero/wrapped_azero.json azero/artifacts/wrapped_azero.json
+
+          mkdir -p eth/artifacts/contracts/{Most.sol,WETH9.sol,USDT.sol,WrappedToken.sol}
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/eth_most/Most.json eth/artifacts/contracts/Most.sol/Most.json
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/eth_weth9/WETH9.json eth/artifacts/contracts/WETH9.sol/WETH9.json
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/eth_tethertoken/TetherToken.json eth/artifacts/contracts/USDT.sol/TetherToken.json
+          aws s3 cp s3://${{ secrets.CONTRACTS_S3BUCKET_NAME }}/most/artifacts/${{ steps.addresses.outputs.commit-sha }}/eth_wrappedtoken/WrappedToken.json eth/artifacts/contracts/WrappedToken.sol/WrappedToken.json
+
+      - name: List files
+        shell: bash
+        run: |
+          find azero/
+          find eth/
+          cat azero/addresses.json
+
+      - name: Run tests for 'testnet-most0' env
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'testnet-most0' }}
+        shell: bash
+        timeout-minutes: 30
+        env:
+          AZERO_NODE_WS: wss://ws.test.azero.dev:443
+          ETH_NODE_HTTP: ${{ secrets.DEVENV_RPC_ETH_ENDPOINT }}
+          ETH_DEV_ACCOUNT_INDEX: 0
+          AZERO_ACCOUNT_SEED: ${{ secrets.DEVENV_TESTNET_AZERO1_KEY }}
+          ETH_MNEMONIC: ${{ secrets.DEVENV_TESTNET_SEPOLIA_KEY }}
+          RUST_LOG: info
+          RUST_BACKTRACE: 1
+        run: |
           make e2e-tests
 
   slack-notification:
