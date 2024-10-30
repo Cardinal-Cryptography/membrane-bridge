@@ -44,7 +44,7 @@ var config = {
       },
       gas: 25e6, // Gas limit
       gasPrice: 20e9,
-      dev: true, // whether to deploys wrapped tokens or not
+      dev: true,
       deploymentConfig: {
         guardianIds: [
           "0x05501355922a6529670DB49158676D98D6c34245",
@@ -106,9 +106,9 @@ if (SEPOLIA_MNEMONIC || SEPOLIA_PRIVATE_KEY) {
           mnemonic: SEPOLIA_MNEMONIC,
         }
       : [SEPOLIA_PRIVATE_KEY],
-    gasPrice: 10e9, // 10 Gwei; it's set to have an upper bound for contract deployment costs
+    gasPrice: 20e9, // 20 Gwei
     timeout: 20000, // 20s; if gas prices are higher than 20 Gwei, any tx would likely
-    // become stuck in the mempool, hence we need a timeout for a deployment script to finish
+    // stuck in the mempool, hence we need a timeout
     deploymentConfig: {
       guardianIds: [
         typeof SEPOLIA_ACCOUNT_NUMBER == "undefined" ||

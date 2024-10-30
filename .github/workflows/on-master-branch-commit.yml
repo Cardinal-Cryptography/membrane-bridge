@@ -15,7 +15,7 @@ jobs:
   compile-contracts-and-deploy-to-devenv:
     needs: [check-vars-and-secrets]
     name: Compile contracts and deploy to devenv
-    uses: ./.github/workflows/contracts-compile-and-deploy-to-devenv.yml
+    uses: ./.github/workflows/contracts-compile-and-deploy-to-testnet.yml
     secrets: inherit
 
   test-azero-contracts:

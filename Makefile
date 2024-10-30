@@ -3,6 +3,10 @@ AZERO_ENV ?= dev
 DOCKER_RELAYER_NAME ?= most-relayer
 DOCKER_RELAYER_COPY_ADDRESSES ?= copy
 DOCKER_RELAYER_COMPILE_CONTRACTS ?= compile
+COMPILE_ETH_CONTRACTS_WHEN_DEPLOYING ?= compile
+COMPILE_AZERO_CONTRACTS_WHEN_DEPLOYING ?= compile
+COMPILE_ETH_CONTRACTS_WHEN_SETUP ?= compile
+COMPILE_AZERO_CONTRACTS_WHEN_SETUP ?= compile
 DOCKER_SIGNER_NAME ?= most-signer
 L2 ?= false
 
@@ -97,13 +101,17 @@ compile-eth: eth-deps
 
 .PHONY: deploy-eth
 deploy-eth: # Deploy eth contracts
+ifeq ($(COMPILE_ETH_CONTRACTS_WHEN_DEPLOYING),compile)
 deploy-eth: compile-eth
+endif
 	cd eth && \
 	npx hardhat run --network $(NETWORK) scripts/0_deploy_bridge_contracts.js
 
 .PHONY: deploy-eth-transfer-limit
 deploy-eth-transfer-limit: # Deploy TransferLimit eth contract
+ifeq ($(COMPILE_ETH_CONTRACTS_WHEN_DEPLOYING),compile)
 deploy-eth-transfer-limit: compile-eth
+endif
 	cd eth && \
 	npx hardhat run --network $(NETWORK) scripts/deploy_transfer_limit.js
 
@@ -125,7 +133,9 @@ verify-eth:
 
 .PHONY: setup-eth
 setup-eth: # Setup eth contracts
+ifeq ($(COMPILE_ETH_CONTRACTS_WHEN_SETUP),compile)
 setup-eth: compile-eth
+endif
 	cd eth && \
 	npx hardhat run --network $(NETWORK) scripts/1_setup_bridge_contracts.js
 
@@ -165,12 +175,16 @@ print-azero-codehashes: compile-azero-docker
 
 .PHONY: deploy-azero-docker
 deploy-azero-docker: # Deploy azero contracts compiling in docker
+ifeq ($(COMPILE_AZERO_CONTRACTS_WHEN_DEPLOYING),compile)
 deploy-azero-docker: azero-deps compile-azero-docker typechain-azero
+endif
 	cd azero && AZERO_ENV=$(AZERO_ENV) npm run deploy
 
 .PHONY: setup-azero-docker
 setup-azero-docker: # Setup azero contracts compiling in docker
+ifeq ($(COMPILE_AZERO_CONTRACTS_WHEN_SETUP),compile)
 setup-azero-docker: azero-deps compile-azero-docker
+endif
 	cd azero && AZERO_ENV=$(AZERO_ENV) npm run setup
 
 .PHONY: azero-deps
@@ -200,7 +214,7 @@ compile-azero: azero-deps
 	make compile-azero-single-contract CONTRACT_DIR=gas-price-oracle/contract CONTRACT_NAME=oracle
 	cd azero && cp external_artifacts/wrapped_azero.contract artifacts/
 	cd azero && cp external_artifacts/wrapped_azero.json artifacts/
-	cd azero && cp external_artifacts/wrapped_azero.wasm artifacts/
+	cd azero && cp external_artifacts/wrapped_azero.wasm artifacts/14
 
 .PHONY: typechain-azero
 typechain-azero: # Generate typechain typings for azero contracts
@@ -209,7 +223,9 @@ typechain-azero:
 
 .PHONY: deploy-azero
 deploy-azero: # Deploy azero contracts
+ifeq ($(COMPILE_AZERO_CONTRACTS_WHEN_DEPLOYING),compile)
 deploy-azero: compile-azero typechain-azero
+endif
 	cd azero && AZERO_ENV=$(AZERO_ENV) npm run deploy
 
 .PHONY: upload-azero
@@ -219,7 +235,9 @@ upload-azero: compile-azero-docker typechain-azero
 
 .PHONY: setup-azero
 setup-azero: # Setup azero contracts
+ifeq ($(COMPILE_AZERO_CONTRACTS_WHEN_SETUP),compile)
 setup-azero: compile-azero typechain-azero
+endif
 	cd azero && AZERO_ENV=$(AZERO_ENV) npm run setup
 
 .PHONY: deploy
@@ -457,3 +475,13 @@ build-docker-signer:
 	cd relayer && cargo build -p signer --release
 	cp relayer/target/release/signer relayer/signer_docker
 	cd relayer/signer_docker && docker build -t $(DOCKER_SIGNER_NAME) .
+
+.PHONY: get-latest-eth-block
+get-latest-eth-block: # Get latest eth block
+get-latest-eth-block: eth-deps
+	cd eth && npx hardhat run --network $(NETWORK) scripts/get_latest_block.js
+
+.PHONY: get-latest-azero-block
+get-latest-azero-block: # Get latest eth block
+get-latest-azero-block: azero-deps
+	cd azero && AZERO_ENV=$(AZERO_ENV) npm run get-latest-block
